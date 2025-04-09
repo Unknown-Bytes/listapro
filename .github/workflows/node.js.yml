@@ -1,43 +1,42 @@
 #Este workflow instala as dependências do Node, usa cache, compila o código-fonte e executa os testes em diferentes versões do Node.
 name: Node.js CI/CD to AWS
-
 on:
   push:
     branches: [ "main" ]
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: production  
-
     steps:
       # Passo 1: Checkout do código
       - name: Checkout code
         uses: actions/checkout@v4
-
       # Passo 2: Configurar Node.js e rodar testes
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build and Test
         run: |
           npm run build --if-present
           npm test
-
-      # Passo 3: Login no AWS ECR
+      # Passo 3: Configurar credenciais AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      # Passo 4: Login no AWS ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
         with:
-          region: ${{ secrets.AWS_REGION }}
-
-      # Passo 4: Construir e enviar a imagem Docker
+          aws-region: ${{ secrets.AWS_REGION }}
+      # Passo 5: Construir e enviar a imagem Docker
       - name: Build, Tag, and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -46,17 +45,10 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-      # Passo 5: Implantar no ECS
+      # Passo 6: Implantar no ECS
       - name: Deploy to ECS
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}  # Ex: us-east-1
-          ECS_CLUSTER: meu-cluster-ecs          # Nome do cluster ECS
-          ECS_SERVICE: meu-app-service          # Nome do serviço ECS
         run: |
           aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
+            --cluster meu-cluster-ecs \
+            --service meu-app-service \
             --force-new-deployment
